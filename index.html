@@ -13,7 +13,7 @@
 </head>
 <body>
 
-<h2>DOSBox-WASM GitHub Runner (BAT & EXE only)</h2>
+<h2>DOSBox-WASM GitHub Runner & Dialog Box</h2>
 <input id="repoUrl" type="text" placeholder="https://github.com/user/repo" />
 <button id="runBtn">Load & Run</button>
 
@@ -32,7 +32,6 @@
     logEl.scrollTop = logEl.scrollHeight;
   }
 
-  // פשוט מפצל URL
   function parseGithubUrl(url) {
     try {
       const u = new URL(url);
@@ -68,7 +67,6 @@
     }
     log(`Owner: ${parsed.owner}, Repo: ${parsed.repo}`);
 
-    // מחפש bat או exe
     let fileToRun = await findFileRecursively(parsed.owner, parsed.repo, ['.bat']);
     let type = 'bat';
     if(!fileToRun) {
@@ -89,28 +87,27 @@
     }
     const data = await (type === 'bat' ? fileResp.text() : fileResp.arrayBuffer());
 
-    // צור ZIP עם הקובץ וautoexec.bat שמריץ את הקובץ שנמצא
     const zip = new JSZip();
     zip.file(fileToRun.name, data);
     zip.file('autoexec.bat', `${fileToRun.name}\nexit\n`);
     const blob = await zip.generateAsync({type: 'blob'});
 
     log('Starting DOSBox-WASM emulator...');
-    dosContainer.innerHTML = ''; // נקה קודם
+    dosContainer.innerHTML = ''; // clear container
 
-    // יצירת instance של dosbox
-    const dosbox = await Dosbox({
-      id: 'dosContainer',
-      onstatus: (status) => log('DOSBox status: ' + status),
-      onerror: (err) => log('DOSBox error: ' + err)
-    });
+    try {
+      const dosbox = await DosBox({
+        id: 'dosContainer',
+        onstatus: (status) => log('DOSBox status: ' + status),
+        onerror: (err) => log('DOSBox error: ' + err)
+      });
 
-    // mount ה-ZIP באמולטור
-    await dosbox.mountZip('/dos', blob);
-
-    // הפעלת autoexec.bat
-    await dosbox.run('C:\\dos\\autoexec.bat');
-    log('DOSBox started!');
+      await dosbox.mountZip('/dos', blob);
+      await dosbox.run('C:\\dos\\autoexec.bat');
+      log('DOSBox started!');
+    } catch(e) {
+      log('DOSBox failed to start: ' + e);
+    }
   }
 
   document.getElementById('runBtn').addEventListener('click', () => {
