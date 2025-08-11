@@ -1,80 +1,117 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <meta charset="UTF-8">
-  <title>Assembly GitHub Runner</title>
+  <meta charset="UTF-8" />
+  <title>Assembly GitHub Runner (BAT & EXE only)</title>
   <script src="https://js-dos.com/cdn/js-dos-api.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
-  <script src="nasm-wasm.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px; }
+    input { width: 70%; }
+    button { margin-left: 8px; }
+    #log { background: #222; color: #eee; padding: 10px; height: 150px; overflow-y: auto; white-space: pre-wrap; margin-top: 10px; }
+    #dosCanvas { border: 1px solid #888; margin-top: 10px; width: 640px; height: 400px; }
+  </style>
 </head>
 <body>
-  <input type="text" id="repoUrl" placeholder="https://github.com/user/repo">
+  <h2>Assembly GitHub Runner (BAT & EXE only)</h2>
+  <input id="repoUrl" type="text" placeholder="https://github.com/user/repo" />
   <button id="runBtn">Load & Run</button>
-  <canvas id="dos"></canvas>
 
-  <script>
-    async function fetchRepoContents(owner, repo, path = "") {
-      const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/${path}`);
-      if (!res.ok) throw new Error("Failed to fetch repo contents");
-      return await res.json();
-    }
+  <div id="log">Ready.</div>
+  <canvas id="dosCanvas"></canvas>
 
-    async function findFileRecursively(owner, repo, extensions, path = "") {
-      const contents = await fetchRepoContents(owner, repo, path);
-      for (const item of contents) {
-        if (item.type === "file" && extensions.some(ext => item.name.toLowerCase().endsWith(ext))) {
-          return item;
-        } else if (item.type === "dir") {
-          const found = await findFileRecursively(owner, repo, extensions, item.path);
-          if (found) return found;
-        }
-      }
+<script>
+  const logEl = document.getElementById('log');
+  function log(...args) {
+    logEl.textContent += '\n' + args.join(' ');
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  // פשוט מפצלים URL כדי לקבל owner ו-repo
+  function parseGithubUrl(url) {
+    try {
+      const u = new URL(url);
+      const parts = u.pathname.split('/').filter(Boolean);
+      if(parts.length < 2) return null;
+      return { owner: parts[0], repo: parts[1] };
+    } catch {
       return null;
     }
+  }
 
-    async function runProjectFromRepo(repoUrl) {
-      const [ , , , owner, repo ] = repoUrl.split("/");
-      let fileToRun = await findFileRecursively(owner, repo, [".bat"]);
-      let type = "bat";
-      if (!fileToRun) {
-        fileToRun = await findFileRecursively(owner, repo, [".exe"]);
-        type = "exe";
+  // מחפש קבצים עם סיומות bat או exe ברפוזיטורי (כולל בתיקיות)
+  async function findFileRecursively(owner, repo, exts, path = '') {
+    const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/${path}`);
+    if(!res.ok) throw new Error(`Failed fetching contents at ${path}`);
+    const files = await res.json();
+    for(const file of files) {
+      if(file.type === 'file' && exts.some(ext => file.name.toLowerCase().endsWith(ext))) {
+        return file;
+      } else if(file.type === 'dir') {
+        const found = await findFileRecursively(owner, repo, exts, file.path);
+        if(found) return found;
       }
-      if (!fileToRun) {
-        fileToRun = await findFileRecursively(owner, repo, [".asm"]);
-        type = "asm";
-      }
-      if (!fileToRun) {
-        alert("No BAT/EXE/ASM file found");
-        return;
-      }
+    }
+    return null;
+  }
 
-      const fileContent = await fetch(fileToRun.download_url);
-      const arrayBuffer = await fileContent.arrayBuffer();
-      const zip = new JSZip();
-
-      if (type === "asm") {
-        await initNasm();
-        const asmCode = new TextDecoder().decode(arrayBuffer);
-        const comBinary = nasm_compile(asmCode, { format: "bin", output: "program.com" });
-        zip.file("program.com", comBinary);
-        zip.file("autoexec.bat", "program.com\nexit\n");
-      } else {
-        zip.file(fileToRun.name, arrayBuffer);
-        zip.file("autoexec.bat", `${fileToRun.name}\nexit\n`);
-      }
-
-      const blob = await zip.generateAsync({ type: "blob" });
-      Dos(document.getElementById("dos"), {
-        url: URL.createObjectURL(blob),
-        autostart: true
-      });
+  async function runProjectFromRepo(repoUrl) {
+    log('Parsing URL...');
+    const parsed = parseGithubUrl(repoUrl);
+    if(!parsed) {
+      alert('Invalid GitHub repo URL');
+      return;
     }
 
-    document.getElementById("runBtn").addEventListener("click", () => {
-      const url = document.getElementById("repoUrl").value.trim();
-      runProjectFromRepo(url);
-    });
-  </script>
+    log(`Owner: ${parsed.owner}, Repo: ${parsed.repo}`);
+
+    // מחפש BAT קודם, אחר כך EXE
+    let fileToRun = await findFileRecursively(parsed.owner, parsed.repo, ['.bat']);
+    let type = 'bat';
+    if(!fileToRun) {
+      fileToRun = await findFileRecursively(parsed.owner, parsed.repo, ['.exe']);
+      type = 'exe';
+    }
+    if(!fileToRun) {
+      alert('No BAT or EXE file found in repo.');
+      return;
+    }
+
+    log(`Found ${type.toUpperCase()} file: ${fileToRun.name}`);
+    log('Downloading file...');
+
+    const fileResp = await fetch(fileToRun.download_url);
+    if(!fileResp.ok) {
+      alert('Failed to download the file');
+      return;
+    }
+    const data = await (type === 'bat' ? fileResp.text() : fileResp.arrayBuffer());
+
+    log('Creating DOS zip...');
+    const zip = new JSZip();
+    if(type === 'bat') {
+      zip.file(fileToRun.name, data);
+      zip.file('autoexec.bat', `${fileToRun.name}\nexit\n`);
+    } else {
+      zip.file(fileToRun.name, data);
+      zip.file('autoexec.bat', `${fileToRun.name}\nexit\n`);
+    }
+
+    const blob = await zip.generateAsync({type: 'blob'});
+
+    log('Starting js-dos emulator...');
+    const canvas = document.getElementById('dosCanvas');
+    Dos(canvas, { url: URL.createObjectURL(blob), autostart: true })
+      .then(() => log('js-dos started!'))
+      .catch(err => log('js-dos error:', err));
+  }
+
+  document.getElementById('runBtn').addEventListener('click', () => {
+    logEl.textContent = 'Starting...\n';
+    const url = document.getElementById('repoUrl').value.trim();
+    runProjectFromRepo(url);
+  });
+</script>
 </body>
 </html>
