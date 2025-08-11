@@ -2,9 +2,12 @@
 <html>
 <head>
 <meta charset="UTF-8" />
-<title>Run BAT/EXE with js-dos</title>
-<script src="https://js-dos.com/cdn/js-dos-api.js"></script>
+<title>Run BAT/EXE with local js-dos</title>
+
+<!-- טען js-dos-api.js מקומי -->
+<script src="libs/js-dos-api.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+
 <style>
   body { font-family: Arial,sans-serif; padding: 20px; }
   #dosCanvas { border: 1px solid #888; width: 640px; height: 400px; margin-top: 10px; }
@@ -13,7 +16,7 @@
 </head>
 <body>
 
-<h2>Run BAT/EXE with js-dos</h2>
+<h2>Run BAT/EXE with local js-dos</h2>
 <input id="repoUrl" type="text" placeholder="https://github.com/user/repo" style="width:70%;" />
 <button id="runBtn">Load & Run</button>
 
@@ -21,10 +24,10 @@
 <canvas id="dosCanvas"></canvas>
 
 <script>
-  // Wait until the DOM and scripts are fully loaded
+  // ודא שהקוד רץ אחרי טעינת js-dos
   window.onload = () => {
     if (typeof Dos === 'undefined') {
-      alert('js-dos API not loaded!');
+      alert('js-dos API לא נטען! בדוק את נתיב הסקריפט');
       return;
     }
 
