@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Assembly GitHub Runner</title>
+  <script src="https://js-dos.com/cdn/js-dos-api.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+  <script src="nasm-wasm.js"></script>
+</head>
+<body>
+  <input type="text" id="repoUrl" placeholder="https://github.com/user/repo">
+  <button id="runBtn">Load & Run</button>
+  <canvas id="dos"></canvas>
+
+  <script>
+    async function fetchRepoContents(owner, repo, path = "") {
+      const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/${path}`);
+      if (!res.ok) throw new Error("Failed to fetch repo contents");
+      return await res.json();
+    }
+
+    async function findFileRecursively(owner, repo, extensions, path = "") {
+      const contents = await fetchRepoContents(owner, repo, path);
+      for (const item of contents) {
+        if (item.type === "file" && extensions.some(ext => item.name.toLowerCase().endsWith(ext))) {
+          return item;
+        } else if (item.type === "dir") {
+          const found = await findFileRecursively(owner, repo, extensions, item.path);
+          if (found) return found;
+        }
+      }
+      return null;
+    }
+
+    async function runProjectFromRepo(repoUrl) {
+      const [ , , , owner, repo ] = repoUrl.split("/");
+      let fileToRun = await findFileRecursively(owner, repo, [".bat"]);
+      let type = "bat";
+      if (!fileToRun) {
+        fileToRun = await findFileRecursively(owner, repo, [".exe"]);
+        type = "exe";
+      }
+      if (!fileToRun) {
+        fileToRun = await findFileRecursively(owner, repo, [".asm"]);
+        type = "asm";
+      }
+      if (!fileToRun) {
+        alert("No BAT/EXE/ASM file found");
+        return;
+      }
+
+      const fileContent = await fetch(fileToRun.download_url);
+      const arrayBuffer = await fileContent.arrayBuffer();
+      const zip = new JSZip();
+
+      if (type === "asm") {
+        await initNasm();
+        const asmCode = new TextDecoder().decode(arrayBuffer);
+        const comBinary = nasm_compile(asmCode, { format: "bin", output: "program.com" });
+        zip.file("program.com", comBinary);
+        zip.file("autoexec.bat", "program.com\nexit\n");
+      } else {
+        zip.file(fileToRun.name, arrayBuffer);
+        zip.file("autoexec.bat", `${fileToRun.name}\nexit\n`);
+      }
+
+      const blob = await zip.generateAsync({ type: "blob" });
+      Dos(document.getElementById("dos"), {
+        url: URL.createObjectURL(blob),
+        autostart: true
+      });
+    }
+
+    document.getElementById("runBtn").addEventListener("click", () => {
+      const url = document.getElementById("repoUrl").value.trim();
+      runProjectFromRepo(url);
+    });
+  </script>
+</body>
+</html>
