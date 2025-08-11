@@ -4,27 +4,17 @@
 <meta charset="UTF-8" />
 <title>Run BAT/EXE with local js-dos</title>
 
-<!-- טען js-dos-api.js מקומי -->
-<script src="libs/js-dos-api.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
-
 <style>
   body { font-family: Arial,sans-serif; padding: 20px; }
   #dosCanvas { border: 1px solid #888; width: 640px; height: 400px; margin-top: 10px; }
   #log { background: #222; color: #eee; padding: 10px; height: 150px; overflow-y: auto; white-space: pre-wrap; margin-top: 10px; }
 </style>
-</head>
-<body>
 
-<h2>Run BAT/EXE with local js-dos</h2>
-<input id="repoUrl" type="text" placeholder="https://github.com/user/repo" style="width:70%;" />
-<button id="runBtn">Load & Run</button>
+<!-- טעינת הסקריפטים עם defer -->
+<script src="libs/js-dos-api.js" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js" defer></script>
 
-<div id="log">Ready.</div>
-<canvas id="dosCanvas"></canvas>
-
-<script>
-  // ודא שהקוד רץ אחרי טעינת js-dos
+<script defer>
   window.onload = () => {
     if (typeof Dos === 'undefined') {
       alert('js-dos API לא נטען! בדוק את נתיב הסקריפט');
@@ -89,6 +79,15 @@
     };
   };
 </script>
+</head>
+<body>
+
+<h2>Run BAT/EXE with local js-dos</h2>
+<input id="repoUrl" type="text" placeholder="https://github.com/user/repo" style="width:70%;" />
+<button id="runBtn">Load & Run</button>
+
+<div id="log">Ready.</div>
+<canvas id="dosCanvas"></canvas>
 
 </body>
 </html>
