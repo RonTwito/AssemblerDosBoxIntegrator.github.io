@@ -1,32 +1,38 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>Assembly GitHub Runner & Dialog Box</title>
-  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
-  <style>
-    body { font-family: Arial, sans-serif; padding: 20px; }
-    input { width: 70%; }
-    button { margin-left: 8px; }
-    #log { background: #222; color: #eee; padding: 10px; height: 150px; overflow-y: auto; white-space: pre-wrap; margin-top: 10px; }
-    #dosCanvas { border: 1px solid #888; margin-top: 10px; width: 640px; height: 400px; }
-  </style>
+<meta charset="UTF-8" />
+<title>DOSBox-WASM GitHub Runner</title>
+<style>
+  body { font-family: Arial, sans-serif; padding: 20px; }
+  input { width: 70%; }
+  button { margin-left: 8px; }
+  #log { background: #222; color: #eee; padding: 10px; height: 150px; overflow-y: auto; white-space: pre-wrap; margin-top: 10px; }
+  #dosContainer { border: 1px solid #888; margin-top: 10px; width: 640px; height: 400px; }
+</style>
 </head>
 <body>
-  <h2>Assembly GitHub Runner & Dialog Box</h2>
-  <input id="repoUrl" type="text" placeholder="https://github.com/user/repo" />
-  <button id="runBtn">Load & Run</button>
 
-  <div id="log">Ready.</div>
-  <canvas id="dosCanvas"></canvas>
+<h2>DOSBox-WASM GitHub Runner (BAT & EXE only)</h2>
+<input id="repoUrl" type="text" placeholder="https://github.com/user/repo" />
+<button id="runBtn">Load & Run</button>
+
+<div id="log">Ready.</div>
+<div id="dosContainer"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@dreamlayers/dosbox-wasm@0.10.0/dist/dosbox.js"></script>
 
 <script>
   const logEl = document.getElementById('log');
+  const dosContainer = document.getElementById('dosContainer');
+
   function log(...args) {
     logEl.textContent += '\n' + args.join(' ');
     logEl.scrollTop = logEl.scrollHeight;
   }
 
+  // פשוט מפצל URL
   function parseGithubUrl(url) {
     try {
       const u = new URL(url);
@@ -53,32 +59,16 @@
     return null;
   }
 
-  function loadScript(src) {
-    return new Promise((resolve, reject) => {
-      const s = document.createElement('script');
-      s.src = src;
-      s.onload = resolve;
-      s.onerror = reject;
-      document.head.appendChild(s);
-    });
-  }
-
   async function runProjectFromRepo(repoUrl) {
-    if (typeof Dos === 'undefined') {
-      log('Loading js-dos library...');
-      await loadScript('https://js-dos.com/cdn/js-dos-api.js');
-      log('js-dos library loaded.');
-    }
-
     log('Parsing URL...');
     const parsed = parseGithubUrl(repoUrl);
     if(!parsed) {
       alert('Invalid GitHub repo URL');
       return;
     }
-
     log(`Owner: ${parsed.owner}, Repo: ${parsed.repo}`);
 
+    // מחפש bat או exe
     let fileToRun = await findFileRecursively(parsed.owner, parsed.repo, ['.bat']);
     let type = 'bat';
     if(!fileToRun) {
@@ -89,7 +79,6 @@
       alert('No BAT or EXE file found in repo.');
       return;
     }
-
     log(`Found ${type.toUpperCase()} file: ${fileToRun.name}`);
     log('Downloading file...');
 
@@ -100,27 +89,35 @@
     }
     const data = await (type === 'bat' ? fileResp.text() : fileResp.arrayBuffer());
 
-    log('Creating DOS zip...');
+    // צור ZIP עם הקובץ וautoexec.bat שמריץ את הקובץ שנמצא
     const zip = new JSZip();
     zip.file(fileToRun.name, data);
     zip.file('autoexec.bat', `${fileToRun.name}\nexit\n`);
-
     const blob = await zip.generateAsync({type: 'blob'});
 
-    log('Starting js-dos emulator...');
-    const canvas = document.getElementById('dosCanvas');
-    Dos.run(canvas, { url: URL.createObjectURL(blob), autostart: true })
-      .then(() => log('js-dos started!'))
-      .catch(err => log('js-dos error:', err));
+    log('Starting DOSBox-WASM emulator...');
+    dosContainer.innerHTML = ''; // נקה קודם
+
+    // יצירת instance של dosbox
+    const dosbox = await Dosbox({
+      id: 'dosContainer',
+      onstatus: (status) => log('DOSBox status: ' + status),
+      onerror: (err) => log('DOSBox error: ' + err)
+    });
+
+    // mount ה-ZIP באמולטור
+    await dosbox.mountZip('/dos', blob);
+
+    // הפעלת autoexec.bat
+    await dosbox.run('C:\\dos\\autoexec.bat');
+    log('DOSBox started!');
   }
 
-  window.onload = () => {
-    document.getElementById('runBtn').addEventListener('click', () => {
-      logEl.textContent = 'Starting...\n';
-      const url = document.getElementById('repoUrl').value.trim();
-      runProjectFromRepo(url);
-    });
-  };
+  document.getElementById('runBtn').addEventListener('click', () => {
+    logEl.textContent = 'Starting...\n';
+    runProjectFromRepo(document.getElementById('repoUrl').value.trim());
+  });
 </script>
+
 </body>
 </html>
