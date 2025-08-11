@@ -28,7 +28,6 @@
     logEl.scrollTop = logEl.scrollHeight;
   }
 
-  // פשוט מפצלים URL כדי לקבל owner ו-repo
   function parseGithubUrl(url) {
     try {
       const u = new URL(url);
@@ -40,7 +39,6 @@
     }
   }
 
-  // מחפש קבצים עם סיומות bat או exe ברפוזיטורי (כולל בתיקיות)
   async function findFileRecursively(owner, repo, exts, path = '') {
     const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/${path}`);
     if(!res.ok) throw new Error(`Failed fetching contents at ${path}`);
@@ -66,7 +64,6 @@
 
     log(`Owner: ${parsed.owner}, Repo: ${parsed.repo}`);
 
-    // מחפש BAT קודם, אחר כך EXE
     let fileToRun = await findFileRecursively(parsed.owner, parsed.repo, ['.bat']);
     let type = 'bat';
     if(!fileToRun) {
@@ -90,28 +87,25 @@
 
     log('Creating DOS zip...');
     const zip = new JSZip();
-    if(type === 'bat') {
-      zip.file(fileToRun.name, data);
-      zip.file('autoexec.bat', `${fileToRun.name}\nexit\n`);
-    } else {
-      zip.file(fileToRun.name, data);
-      zip.file('autoexec.bat', `${fileToRun.name}\nexit\n`);
-    }
+    zip.file(fileToRun.name, data);
+    zip.file('autoexec.bat', `${fileToRun.name}\nexit\n`);
 
     const blob = await zip.generateAsync({type: 'blob'});
 
     log('Starting js-dos emulator...');
     const canvas = document.getElementById('dosCanvas');
-    window.Dos(canvas, { url: URL.createObjectURL(blob), autostart: true })
+    Dos.run(canvas, { url: URL.createObjectURL(blob), autostart: true })
       .then(() => log('js-dos started!'))
       .catch(err => log('js-dos error:', err));
   }
 
-  document.getElementById('runBtn').addEventListener('click', () => {
-    logEl.textContent = 'Starting...\n';
-    const url = document.getElementById('repoUrl').value.trim();
-    runProjectFromRepo(url);
-  });
+  window.onload = () => {
+    document.getElementById('runBtn').addEventListener('click', () => {
+      logEl.textContent = 'Starting...\n';
+      const url = document.getElementById('repoUrl').value.trim();
+      runProjectFromRepo(url);
+    });
+  };
 </script>
 </body>
 </html>
