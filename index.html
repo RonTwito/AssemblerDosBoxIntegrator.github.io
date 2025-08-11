@@ -3,7 +3,6 @@
 <head>
   <meta charset="UTF-8" />
   <title>Assembly GitHub Runner & Dialog Box</title>
-  <script src="https://js-dos.com/cdn/js-dos-api.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <style>
     body { font-family: Arial, sans-serif; padding: 20px; }
@@ -14,7 +13,7 @@
   </style>
 </head>
 <body>
-  <h2>Assembly GitHub Runner (BAT & EXE only)</h2>
+  <h2>Assembly GitHub Runner & Dialog Box</h2>
   <input id="repoUrl" type="text" placeholder="https://github.com/user/repo" />
   <button id="runBtn">Load & Run</button>
 
@@ -54,7 +53,23 @@
     return null;
   }
 
+  function loadScript(src) {
+    return new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = src;
+      s.onload = resolve;
+      s.onerror = reject;
+      document.head.appendChild(s);
+    });
+  }
+
   async function runProjectFromRepo(repoUrl) {
+    if (typeof Dos === 'undefined') {
+      log('Loading js-dos library...');
+      await loadScript('https://js-dos.com/cdn/js-dos-api.js');
+      log('js-dos library loaded.');
+    }
+
     log('Parsing URL...');
     const parsed = parseGithubUrl(repoUrl);
     if(!parsed) {
