@@ -102,7 +102,7 @@
 
     log('Starting js-dos emulator...');
     const canvas = document.getElementById('dosCanvas');
-    Dos(canvas, { url: URL.createObjectURL(blob), autostart: true })
+    window.Dos(canvas, { url: URL.createObjectURL(blob), autostart: true })
       .then(() => log('js-dos started!'))
       .catch(err => log('js-dos error:', err));
   }
