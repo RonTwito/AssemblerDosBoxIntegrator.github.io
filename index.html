@@ -1,88 +1,100 @@
 <!DOCTYPE html>
 <html>
 <head>
-<meta charset="UTF-8" />
-<title>Run BAT/EXE with local js-dos</title>
-
-<style>
-  body { font-family: Arial,sans-serif; padding: 20px; }
-  #dosCanvas { border: 1px solid #888; width: 640px; height: 400px; margin-top: 10px; }
-  #log { background: #222; color: #eee; padding: 10px; height: 150px; overflow-y: auto; white-space: pre-wrap; margin-top: 10px; }
-</style>
-
-<!-- טעינת הסקריפטים עם defer -->
-<script src="libs/js-dos-api.js" defer></script>
-<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js" defer></script>
-
-<script defer>
-  window.onload = () => {
-    if (typeof Dos === 'undefined') {
-      alert('js-dos API לא נטען! בדוק את נתיב הסקריפט');
-      return;
-    }
-
-    const logEl = document.getElementById('log');
-    const canvas = document.getElementById('dosCanvas');
-    function log(...args) {
-      logEl.textContent += '\n' + args.join(' ');
-      logEl.scrollTop = logEl.scrollHeight;
-    }
-
-    async function runFromRepo(url) {
-      log('Parsing URL...');
-      try {
-        const u = new URL(url);
-        const parts = u.pathname.split('/').filter(Boolean);
-        if(parts.length < 2) throw new Error('Invalid GitHub repo URL');
-        const owner = parts[0], repo = parts[1];
-        log(`Owner: ${owner}, Repo: ${repo}`);
-
-        async function findFile(path = '') {
-          const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/${path}`);
-          if(!res.ok) throw new Error(`Failed fetching contents at ${path}`);
-          const files = await res.json();
-          for(const f of files) {
-            if(f.type === 'file' && (f.name.toLowerCase().endsWith('.bat') || f.name.toLowerCase().endsWith('.exe'))) return f;
-            if(f.type === 'dir') {
-              const found = await findFile(f.path);
-              if(found) return found;
-            }
-          }
-          return null;
-        }
-
-        const fileToRun = await findFile();
-        if(!fileToRun) throw new Error('No BAT or EXE found');
-        log(`Found file: ${fileToRun.name}`);
-
-        const fileResp = await fetch(fileToRun.download_url);
-        if(!fileResp.ok) throw new Error('Failed to download the file');
-        const data = fileToRun.name.toLowerCase().endsWith('.bat') ? await fileResp.text() : await fileResp.arrayBuffer();
-
-        const zip = new JSZip();
-        zip.file(fileToRun.name, data);
-        zip.file('autoexec.bat', `${fileToRun.name}\nexit\n`);
-        const blob = await zip.generateAsync({type:'blob'});
-
-        log('Starting js-dos...');
-        await Dos(canvas, { url: URL.createObjectURL(blob), autostart: true });
-        log('js-dos started!');
-      } catch(e) {
-        log('Error: ' + e.message);
-        alert(e.message);
+  <meta charset="UTF-8" />
+  <title>Assembley Web Enviroment</title>
+  <style>
+    body { font-family: Arial,sans-serif; padding: 20px; }
+    #dosCanvas { border: 1px solid #888; width: 640px; height: 400px; margin-top: 10px; }
+    #log { background: #222; color: #eee; padding: 10px; height: 150px; overflow-y: auto; white-space: pre-wrap; margin-top: 10px; }
+  </style>
+  <!-- Load js-dos and JSZip from CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/js-dos@7.5.0/dist/js-dos.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+  <script>
+    window.onload = () => {
+      if (typeof Dos === 'undefined') {
+        alert('js-dos API לא נטען! בדוק את נתיב הסקריפט');
+        return;
       }
-    }
 
-    document.getElementById('runBtn').onclick = () => {
-      logEl.textContent = 'Starting...\n';
-      runFromRepo(document.getElementById('repoUrl').value.trim());
+      const logEl = document.getElementById('log');
+      const canvas = document.getElementById('dosCanvas');
+      function log(...args) {
+        logEl.textContent += '\n' + args.join(' ');
+        logEl.scrollTop = logEl.scrollHeight;
+      }
+
+      async function runFromRepo(url) {
+        log('Parsing URL...');
+        try {
+          const u = new URL(url);
+          const parts = u.pathname.split('/').filter(Boolean);
+          if (parts.length < 2) throw new Error('Invalid GitHub repo URL');
+          const owner = parts[0], repo = parts[1];
+          log(`Owner: ${owner}, Repo: ${repo}`);
+
+          // Recursively find all .bat or .exe files
+          async function findAllFiles(path = '', matches = []) {
+            const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/${path}`);
+            if (!res.ok) throw new Error(`Failed fetching contents at ${path}`);
+            const files = await res.json();
+            for (const f of files) {
+              if (f.type === 'file' && (f.name.toLowerCase().endsWith('.bat') || f.name.toLowerCase().endsWith('.exe'))) {
+                matches.push(f);
+              }
+              if (f.type === 'dir') {
+                await findAllFiles(f.path, matches);
+              }
+            }
+            return matches;
+          }
+
+          const filesFound = await findAllFiles();
+          if (!filesFound.length) throw new Error('No BAT or EXE found');
+          let fileToRun;
+          if (filesFound.length === 1) {
+            fileToRun = filesFound[0];
+          } else {
+            const names = filesFound.map((f, i) => `${i + 1}: ${f.path}`).join('\n');
+            const choice = prompt(`Multiple BAT/EXE files found:\n${names}\nEnter the number to run:`);
+            const idx = parseInt(choice, 10) - 1;
+            fileToRun = filesFound[idx];
+            if (!fileToRun) throw new Error('Invalid selection');
+          }
+          log(`Found file: ${fileToRun.name}`);
+
+          const fileResp = await fetch(fileToRun.download_url);
+          if (!fileResp.ok) throw new Error('Failed to download the file');
+          const data = fileToRun.name.toLowerCase().endsWith('.bat')
+            ? await fileResp.text()
+            : await fileResp.arrayBuffer();
+
+          // Create a zip in memory
+          const zip = new JSZip();
+          zip.file(fileToRun.name, data);
+          zip.file('autoexec.bat', `${fileToRun.name}\nexit\n`);
+          const blob = await zip.generateAsync({ type: 'blob' });
+
+          log('Starting js-dos...');
+          await Dos(canvas, { url: URL.createObjectURL(blob), autostart: true });
+          log('js-dos started!');
+        } catch (e) {
+          log('Error: ' + e.message);
+          alert(e.message);
+        }
+      }
+
+      document.getElementById('runBtn').onclick = () => {
+        logEl.textContent = 'Starting...\n';
+        runFromRepo(document.getElementById('repoUrl').value.trim());
+      };
     };
-  };
-</script>
+  </script>
 </head>
 <body>
 
-<h2>Run BAT/EXE with local js-dos</h2>
+<h2>Assembley Web Enviroment</h2>
 <input id="repoUrl" type="text" placeholder="https://github.com/user/repo" style="width:70%;" />
 <button id="runBtn">Load & Run</button>
 
