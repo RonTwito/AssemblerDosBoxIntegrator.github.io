@@ -1,119 +1,83 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
 <meta charset="UTF-8" />
-<title>DOSBox-WASM GitHub Runner</title>
+<title>Run DOS BAT/EXE with js-dos</title>
+<script src="https://js-dos.com/cdn/js-dos-api.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 <style>
-  body { font-family: Arial, sans-serif; padding: 20px; }
-  input { width: 70%; }
-  button { margin-left: 8px; }
+  body { font-family: Arial,sans-serif; padding: 20px; }
+  #dosCanvas { border: 1px solid #888; width: 640px; height: 400px; margin-top: 10px; }
   #log { background: #222; color: #eee; padding: 10px; height: 150px; overflow-y: auto; white-space: pre-wrap; margin-top: 10px; }
-  #dosContainer { border: 1px solid #888; margin-top: 10px; width: 640px; height: 400px; }
 </style>
 </head>
 <body>
 
-<h2>DOSBox-WASM GitHub Runner & Dialog Box</h2>
-<input id="repoUrl" type="text" placeholder="https://github.com/user/repo" />
+<h2>Run BAT/EXE with js-dos</h2>
+<input id="repoUrl" type="text" placeholder="https://github.com/user/repo" style="width:70%;" />
 <button id="runBtn">Load & Run</button>
 
 <div id="log">Ready.</div>
-<div id="dosContainer"></div>
-
-<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@dreamlayers/dosbox-wasm@0.10.0/dist/dosbox.js"></script>
+<canvas id="dosCanvas"></canvas>
 
 <script>
   const logEl = document.getElementById('log');
-  const dosContainer = document.getElementById('dosContainer');
-
+  const canvas = document.getElementById('dosCanvas');
   function log(...args) {
     logEl.textContent += '\n' + args.join(' ');
     logEl.scrollTop = logEl.scrollHeight;
   }
 
-  function parseGithubUrl(url) {
+  async function runFromRepo(url) {
+    log('Parsing URL...');
     try {
       const u = new URL(url);
       const parts = u.pathname.split('/').filter(Boolean);
-      if(parts.length < 2) return null;
-      return { owner: parts[0], repo: parts[1] };
-    } catch {
-      return null;
-    }
-  }
+      if(parts.length < 2) throw new Error('Invalid GitHub repo URL');
+      const owner = parts[0], repo = parts[1];
+      log(`Owner: ${owner}, Repo: ${repo}`);
 
-  async function findFileRecursively(owner, repo, exts, path = '') {
-    const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/${path}`);
-    if(!res.ok) throw new Error(`Failed fetching contents at ${path}`);
-    const files = await res.json();
-    for(const file of files) {
-      if(file.type === 'file' && exts.some(ext => file.name.toLowerCase().endsWith(ext))) {
-        return file;
-      } else if(file.type === 'dir') {
-        const found = await findFileRecursively(owner, repo, exts, file.path);
-        if(found) return found;
+      // Fetch repo contents recursively to find bat or exe
+      async function findFile(path = '') {
+        const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/${path}`);
+        if(!res.ok) throw new Error(`Failed fetching contents at ${path}`);
+        const files = await res.json();
+        for(const f of files) {
+          if(f.type === 'file' && (f.name.toLowerCase().endsWith('.bat') || f.name.toLowerCase().endsWith('.exe'))) return f;
+          if(f.type === 'dir') {
+            const found = await findFile(f.path);
+            if(found) return found;
+          }
+        }
+        return null;
       }
-    }
-    return null;
-  }
 
-  async function runProjectFromRepo(repoUrl) {
-    log('Parsing URL...');
-    const parsed = parseGithubUrl(repoUrl);
-    if(!parsed) {
-      alert('Invalid GitHub repo URL');
-      return;
-    }
-    log(`Owner: ${parsed.owner}, Repo: ${parsed.repo}`);
+      const fileToRun = await findFile();
+      if(!fileToRun) throw new Error('No BAT or EXE found');
+      log(`Found file: ${fileToRun.name}`);
 
-    let fileToRun = await findFileRecursively(parsed.owner, parsed.repo, ['.bat']);
-    let type = 'bat';
-    if(!fileToRun) {
-      fileToRun = await findFileRecursively(parsed.owner, parsed.repo, ['.exe']);
-      type = 'exe';
-    }
-    if(!fileToRun) {
-      alert('No BAT or EXE file found in repo.');
-      return;
-    }
-    log(`Found ${type.toUpperCase()} file: ${fileToRun.name}`);
-    log('Downloading file...');
+      const fileResp = await fetch(fileToRun.download_url);
+      if(!fileResp.ok) throw new Error('Failed to download the file');
+      const data = fileToRun.name.toLowerCase().endsWith('.bat') ? await fileResp.text() : await fileResp.arrayBuffer();
 
-    const fileResp = await fetch(fileToRun.download_url);
-    if(!fileResp.ok) {
-      alert('Failed to download the file');
-      return;
-    }
-    const data = await (type === 'bat' ? fileResp.text() : fileResp.arrayBuffer());
+      const zip = new JSZip();
+      zip.file(fileToRun.name, data);
+      zip.file('autoexec.bat', `${fileToRun.name}\nexit\n`);
+      const blob = await zip.generateAsync({type:'blob'});
 
-    const zip = new JSZip();
-    zip.file(fileToRun.name, data);
-    zip.file('autoexec.bat', `${fileToRun.name}\nexit\n`);
-    const blob = await zip.generateAsync({type: 'blob'});
-
-    log('Starting DOSBox-WASM emulator...');
-    dosContainer.innerHTML = ''; // clear container
-
-    try {
-      const dosbox = await DosBox({
-        id: 'dosContainer',
-        onstatus: (status) => log('DOSBox status: ' + status),
-        onerror: (err) => log('DOSBox error: ' + err)
-      });
-
-      await dosbox.mountZip('/dos', blob);
-      await dosbox.run('C:\\dos\\autoexec.bat');
-      log('DOSBox started!');
+      log('Starting js-dos...');
+      await Dos(canvas, { url: URL.createObjectURL(blob), autostart: true });
+      log('js-dos started!');
     } catch(e) {
-      log('DOSBox failed to start: ' + e);
+      log('Error: ' + e.message);
+      alert(e.message);
     }
   }
 
-  document.getElementById('runBtn').addEventListener('click', () => {
+  document.getElementById('runBtn').onclick = () => {
     logEl.textContent = 'Starting...\n';
-    runProjectFromRepo(document.getElementById('repoUrl').value.trim());
-  });
+    runFromRepo(document.getElementById('repoUrl').value.trim());
+  };
 </script>
 
 </body>
